@@ -1,5 +1,6 @@
 import os
 import importlib
+import sys
 import socket
 import threading
 import json
@@ -34,6 +35,63 @@ try:
     HEIC_AKTIF = True
 except ImportError:
     HEIC_AKTIF = False
+
+
+def _bool_env(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _kirim_notifikasi_telegram(gps_data, saved_path, capture_date, device_data):
+    if not _bool_env("TELEGRAM_NOTIFY_ENABLED", default=False):
+        return
+
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if not token or not chat_id:
+        print("[TELEGRAM] Skip: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID belum di-set")
+        return
+
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
+
+    try:
+        from integrations.telegram_bot_sender import send_capture_summary, send_photo_file
+    except Exception as e:
+        print(f"[TELEGRAM] Import error: {e}")
+        return
+
+    latitude = gps_data.get("latitude") if gps_data else None
+    longitude = gps_data.get("longitude") if gps_data else None
+    accuracy = gps_data.get("accuracy") if gps_data else None
+
+    try:
+        send_capture_summary(
+            latitude=latitude,
+            longitude=longitude,
+            accuracy=accuracy,
+            file_path=saved_path,
+            capture_date=capture_date,
+            device_make=(device_data or {}).get("make"),
+            device_model=(device_data or {}).get("model"),
+            chat_id=chat_id,
+        )
+        print("[TELEGRAM] Summary sent")
+    except Exception as e:
+        print(f"[TELEGRAM] Summary error: {e}")
+
+    if saved_path and _bool_env("TELEGRAM_SEND_PHOTO", default=False):
+        try:
+            send_photo_file(
+                photo_path=saved_path,
+                caption="New mobile capture uploaded",
+                chat_id=chat_id,
+            )
+            print("[TELEGRAM] Photo sent")
+        except Exception as e:
+            print(f"[TELEGRAM] Photo error: {e}")
 
 
 def ambil_exif(file_path):
@@ -399,6 +457,13 @@ def _start_server_mobile(directory=None, port=8000, use_https=True):
                     cek_foto(saved_path, gps_fallback=gps_data, device_fallback=device_data, date_fallback=capture_date)
                 else:
                     print("[SERVER] No image saved, GPS-only upload accepted")
+
+                _kirim_notifikasi_telegram(
+                    gps_data=gps_data,
+                    saved_path=saved_path,
+                    capture_date=capture_date,
+                    device_data=device_data,
+                )
 
                 body = json.dumps(
                     {

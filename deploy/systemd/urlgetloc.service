@@ -1,0 +1,17 @@
+[Unit]
+Description=urlgetloc mobile capture service
+After=network.target
+
+[Service]
+Type=simple
+# Replace with your VPS user, e.g. hpanel_user or ubuntu
+User=__APP_USER__
+# Replace with absolute project path in VPS
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/src/run_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
